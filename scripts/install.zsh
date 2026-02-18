@@ -1,0 +1,6 @@
+#!/usr/bin/env zsh
+
+set -euo pipefail
+
+SCRIPT_DIR="${0:A:h}"
+exec "${SCRIPT_DIR}/install-common.sh" --shell zsh "$@"

@@ -14,7 +14,13 @@ import (
 	"github.com/AugustDG/hopper/internal/index"
 	"github.com/AugustDG/hopper/internal/model"
 	"github.com/AugustDG/hopper/internal/ui"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/sahilm/fuzzy"
+)
+
+var (
+	pinnedPathStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	missingPathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 )
 
 func Run(args []string) error {
@@ -342,11 +348,12 @@ func getProjects(only []string) (config.Config, []model.Project, index.File, str
 }
 
 func bestMatchDetailed(query string, projects []model.Project) (model.Project, []model.Project, bool) {
+	q := strings.ToLower(query)
 	targets := make([]string, 0, len(projects))
 	for _, p := range projects {
-		targets = append(targets, p.Name+" "+p.Path)
+		targets = append(targets, strings.ToLower(p.Name+" "+p.Path))
 	}
-	matches := fuzzy.Find(query, targets)
+	matches := fuzzy.Find(q, targets)
 	if len(matches) > 0 {
 		candidates := make([]model.Project, 0, minInt(8, len(matches)))
 		for i := 0; i < len(matches) && i < 8; i++ {
@@ -354,7 +361,6 @@ func bestMatchDetailed(query string, projects []model.Project) (model.Project, [
 		}
 		return projects[matches[0].Index], candidates, true
 	}
-	q := strings.ToLower(query)
 	for _, p := range projects {
 		if strings.Contains(strings.ToLower(p.Path), q) || strings.Contains(strings.ToLower(p.Name), q) {
 			return p, []model.Project{p}, true
@@ -578,21 +584,13 @@ func makePathSet(paths []string) map[string]struct{} {
 }
 
 func colorizePath(path string, pinned bool, missing bool) string {
-	const (
-		ansiReset = "\x1b[0m"
-		ansiWhite = "\x1b[97m"
-		ansiGold  = "\x1b[38;5;214m"
-		ansiRed   = "\x1b[38;5;196m"
-	)
-	color := ansiWhite
-	if pinned {
-		color = ansiGold
-	}
 	if missing {
-		color = ansiRed
-		path += " (missing)"
+		return missingPathStyle.Render(path + " (missing)")
 	}
-	return color + path + ansiReset
+	if pinned {
+		return pinnedPathStyle.Render(path)
+	}
+	return path
 }
 
 func removeEntryByPath(target string) error {
@@ -629,9 +627,9 @@ func resolveRemoveTarget(cfg config.Config, input string, projects []model.Proje
 
 	targets := make([]string, 0, len(projects))
 	for _, p := range projects {
-		targets = append(targets, p.Name+" "+p.Path)
+		targets = append(targets, strings.ToLower(p.Name+" "+p.Path))
 	}
-	matches := fuzzy.Find(input, targets)
+	matches := fuzzy.Find(strings.ToLower(input), targets)
 	if len(matches) < 2 {
 		return best.Path, nil
 	}

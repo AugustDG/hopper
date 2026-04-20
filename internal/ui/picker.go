@@ -9,7 +9,15 @@ import (
 
 	"github.com/AugustDG/hopper/internal/model"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/sahilm/fuzzy"
+)
+
+var (
+	pickerRenderer = lipgloss.NewRenderer(os.Stderr)
+	pinnedStyle    = pickerRenderer.NewStyle().Foreground(lipgloss.Color("214"))
+	missingStyle   = pickerRenderer.NewStyle().Foreground(lipgloss.Color("196"))
+	selectedStyle  = pickerRenderer.NewStyle().Reverse(true)
 )
 
 type PickResult struct {
@@ -227,11 +235,13 @@ func (m pickerModel) View() string {
 
 	for i := start; i < end; i++ {
 		prefix := "  "
+		line := styledLabel(m.filtered[i])
 		if i == m.cursor {
 			prefix = "> "
+			line = selectedStyle.Render(line)
 		}
 		b.WriteString(prefix)
-		b.WriteString(styledLabel(m.filtered[i]))
+		b.WriteString(line)
 		b.WriteString("\n")
 	}
 	b.WriteString("  enter/l=select  esc/q=cancel  arrows/jk=move  gg/G=top/bottom")
@@ -239,7 +249,7 @@ func (m pickerModel) View() string {
 		b.WriteString("  d/Delete=remove")
 	}
 	b.WriteString("\n")
-	b.WriteString("  colors: pinned=gold, discovered=white, missing pinned=red")
+	b.WriteString("  colors: pinned=gold, missing pinned=red")
 	if m.confirming {
 		b.WriteString("\n")
 		b.WriteString("  remove ")
@@ -380,11 +390,12 @@ func (m *pickerModel) applyFilter() {
 		return
 	}
 
+	qLower := strings.ToLower(q)
 	targets := make([]string, 0, len(m.all))
 	for _, item := range m.all {
 		targets = append(targets, item.search)
 	}
-	matches := fuzzy.Find(q, targets)
+	matches := fuzzy.Find(qLower, targets)
 	if len(matches) > 0 {
 		sort.Slice(matches, func(i, j int) bool {
 			return matches[i].Score > matches[j].Score
@@ -395,12 +406,25 @@ func (m *pickerModel) applyFilter() {
 		}
 		m.filtered = filtered
 	} else {
-		qLower := strings.ToLower(q)
-		filtered := make([]entry, 0, len(m.all))
+		type fallback struct {
+			entry entry
+			pos   int
+		}
+		fbs := make([]fallback, 0, len(m.all))
 		for _, item := range m.all {
-			if strings.Contains(strings.ToLower(item.search), qLower) {
-				filtered = append(filtered, item)
+			if pos := strings.Index(item.search, qLower); pos >= 0 {
+				fbs = append(fbs, fallback{item, pos})
 			}
+		}
+		sort.SliceStable(fbs, func(i, j int) bool {
+			if fbs[i].pos != fbs[j].pos {
+				return fbs[i].pos < fbs[j].pos
+			}
+			return len(fbs[i].entry.search) < len(fbs[j].entry.search)
+		})
+		filtered := make([]entry, 0, len(fbs))
+		for _, f := range fbs {
+			filtered = append(filtered, f.entry)
 		}
 		m.filtered = filtered
 	}
@@ -442,22 +466,11 @@ func newEntry(p model.Project, pinnedSet map[string]struct{}, missingSet map[str
 }
 
 func styledLabel(item entry) string {
-	const (
-		ansiReset = "\x1b[0m"
-		ansiWhite = "\x1b[97m"
-		ansiGold  = "\x1b[38;5;214m"
-		ansiRed   = "\x1b[38;5;196m"
-	)
-	color := ansiWhite
+	if item.missing {
+		return missingStyle.Render(item.label + " (missing)")
+	}
 	if item.pinned {
-		color = ansiGold
+		return pinnedStyle.Render(item.label)
 	}
-	if item.missing {
-		color = ansiRed
-	}
-	suffix := ""
-	if item.missing {
-		suffix = " (missing)"
-	}
-	return color + item.label + suffix + ansiReset
+	return item.label
 }
